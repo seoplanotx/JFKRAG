@@ -30,33 +30,9 @@ if (!process.env.OPENAI_API_KEY) {
 
 // Function to validate environment variables
 async function validateEnvironment() {
+  // For simplicity, let's just use the index directly without checking or creating
   console.log('Using Pinecone index:', process.env.PINECONE_INDEX_NAME);
-  
-  try {
-    // Get a list of indexes
-    const indexes = await pinecone.listIndexes();
-    
-    // Check if our index exists
-    const indexExists = Object.keys(indexes).includes(process.env.PINECONE_INDEX_NAME);
-    
-    // If the index doesn't exist, create it
-    if (!indexExists) {
-      console.log(`Creating Pinecone index: ${process.env.PINECONE_INDEX_NAME}`);
-      await pinecone.createIndex({
-        name: process.env.PINECONE_INDEX_NAME,
-        dimension: 1536, // OpenAI embeddings are 1536 dimensions
-        metric: 'cosine',
-        spec: {
-          starter: {}
-        },
-        waitUntilReady: true,
-      });
-      console.log('Index created successfully');
-    }
-  } catch (error) {
-    console.error(`Error validating environment: ${error.message}`);
-    throw error;
-  }
+  return true;
 }
 
 // Function to download a file
