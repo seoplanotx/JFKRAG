@@ -12,33 +12,45 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Query is required' });
     }
 
-    // Initialize OpenRouter config
+    // Environment variable validation
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const openAiApiKey = process.env.OPENAI_API_KEY;
+    const pineconeApiKey = process.env.PINECONE_API_KEY;
+    const pineconeIndexName = process.env.PINECONE_INDEX_NAME;
+    const llmModel = process.env.LLM_MODEL || 'anthropic/claude-3-sonnet';
+
     if (!openRouterApiKey) {
-      return res.status(500).json({ error: 'OpenRouter API key is not configured' });
+      return res.status(500).json({ error: 'OPENROUTER_API_KEY environment variable is required' });
+    }
+    
+    if (!openAiApiKey) {
+      return res.status(500).json({ error: 'OPENAI_API_KEY environment variable is required' });
+    }
+    
+    if (!pineconeApiKey || !pineconeIndexName) {
+      return res.status(500).json({ error: 'Pinecone configuration is incomplete. Check PINECONE_API_KEY and PINECONE_INDEX_NAME environment variables.' });
     }
 
-    // Get embedding for query using OpenRouter
-    const embeddingResponse = await fetch('https://openrouter.ai/api/v1/embeddings', {
+    // Get embedding for query using OpenAI
+    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openRouterApiKey}`,
-        'HTTP-Referer': 'https://jfk-rag.vercel.app',
-        'X-Title': 'JFK RAG Application',
+        'Authorization': `Bearer ${openAiApiKey}`,
       },
       body: JSON.stringify({
-        model: 'openai/text-embedding-ada-002',
+        model: 'text-embedding-ada-002',
         input: query,
       }),
     });
-    
-    const embeddingData = await embeddingResponse.json();
-    
-    if (!embeddingData.data || !embeddingData.data[0]) {
-      throw new Error('Failed to generate embedding');
+
+    if (!embeddingResponse.ok) {
+      const error = await embeddingResponse.json();
+      console.error('Error from OpenAI embeddings API:', error);
+      return res.status(500).json({ error: 'Failed to generate embeddings from OpenAI API' });
     }
-    
+
+    const embeddingData = await embeddingResponse.json();
     const embedding = embeddingData.data[0].embedding;
     
     // Query Pinecone

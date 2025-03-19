@@ -22,6 +22,12 @@ const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
 });
 
+// Environment variable validation
+if (!process.env.OPENAI_API_KEY) {
+  console.error('Error: OPENAI_API_KEY environment variable is required');
+  process.exit(1);
+}
+
 // Function to validate environment variables
 function validateEnvironment() {
   if (!process.env.OPENROUTER_API_KEY) {
@@ -202,40 +208,39 @@ function splitIntoChunks(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   return chunks;
 }
 
-// Function to create embeddings using OpenRouter
+// Function to create embeddings using OpenAI
 async function createEmbedding(text) {
   console.log(`Creating embedding for text of length ${text.length} characters...`);
   
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://jfk-rag.vercel.app',
-        'X-Title': 'JFK RAG Application',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'openai/text-embedding-ada-002',
+        model: 'text-embedding-ada-002',
         input: text,
       }),
     });
     
+    console.log(`OpenAI API response status: ${response.status}`);
+    console.log(`OpenAI API response headers: ${JSON.stringify(Array.from(response.headers.entries()))}`);
+    
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`OpenRouter API response status: ${response.status}`);
-      console.error(`OpenRouter API response headers:`, JSON.stringify([...response.headers.entries()]));
-      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+      const errorData = await response.json();
+      console.error(`Error creating embeddings: OpenAI API error: ${response.status} - ${JSON.stringify(errorData)}`);
+      throw new Error(`OpenAI API error: ${response.status} - ${JSON.stringify(errorData)}`);
     }
     
     const data = await response.json();
     
     if (!data.data || !data.data[0] || !data.data[0].embedding) {
-      console.error('Unexpected response format from OpenRouter:', JSON.stringify(data));
-      throw new Error('Invalid response format from embeddings API');
+      console.error(`Unexpected OpenAI API response format: ${JSON.stringify(data)}`);
+      throw new Error(`Unexpected OpenAI API response format: ${JSON.stringify(data)}`);
     }
     
-    console.log(`Successfully generated embedding with ${data.data[0].embedding.length} dimensions`);
     return data.data[0].embedding;
   } catch (error) {
     console.error(`Error creating embeddings: ${error.message}`);

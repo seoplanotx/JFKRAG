@@ -10,145 +10,86 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-// Function to check if Vercel CLI is installed
-function checkVercelCLI() {
+// Check if Vercel CLI is installed
+let vercelInstalled = false;
+try {
+  execSync('vercel --version', { stdio: 'ignore' });
+  vercelInstalled = true;
+  console.log('✅ Vercel CLI detected');
+} catch (error) {
+  console.log('⚠️ Vercel CLI not detected. If you want to set up environment variables in Vercel, please install the Vercel CLI first.');
+}
+
+// Check if user is logged in to Vercel
+let vercelLoggedIn = false;
+if (vercelInstalled) {
   try {
-    execSync('vercel --version', { stdio: 'ignore' });
-    return true;
+    execSync('vercel whoami', { stdio: 'ignore' });
+    vercelLoggedIn = true;
+    console.log('✅ You are logged in to Vercel');
   } catch (error) {
-    return false;
+    console.log('⚠️ You are not logged in to Vercel. If you want to set up environment variables in Vercel, please run `vercel login` first.');
   }
 }
 
-// Function to prompt for environment variable
-function promptForEnvVar(name, description, defaultValue = '') {
+const promptUser = (question, defaultValue) => {
   return new Promise((resolve) => {
-    let prompt = `Enter your ${name}`;
-    if (description) {
-      prompt += ` (${description})`;
-    }
-    if (defaultValue) {
-      prompt += ` [${defaultValue}]`;
-    }
-    prompt += ': ';
-    
-    rl.question(prompt, (answer) => {
-      resolve(answer || defaultValue);
+    rl.question(`${question}${defaultValue ? ` (default: ${defaultValue})` : ''}: `, (answer) => {
+      resolve(answer || defaultValue || '');
     });
   });
-}
+};
 
-// Main function
-async function setup() {
-  console.log('JFK RAG Vercel Environment Setup');
-  console.log('================================\n');
+const setupEnvironmentVariables = async () => {
+  console.log('\n📝 Setting up environment variables for the JFK RAG application\n');
   
-  // Check for Vercel CLI
-  if (!checkVercelCLI()) {
-    console.log('❌ Vercel CLI not found. Please install it with:');
-    console.log('npm install -g vercel');
-    rl.close();
-    return;
-  }
+  // Prompt for API keys and other configuration
+  const openRouterApiKey = await promptUser('Enter your OPENROUTER_API_KEY');
+  const openAiApiKey = await promptUser('Enter your OPENAI_API_KEY (used for embeddings)');
+  const pineconeApiKey = await promptUser('Enter your PINECONE_API_KEY');
+  const pineconeIndexName = await promptUser('Enter your PINECONE_INDEX_NAME', 'jfkfiles');
+  const llmModel = await promptUser('Enter your preferred LLM model', 'anthropic/claude-3-sonnet');
   
-  console.log('✅ Vercel CLI detected\n');
-  
-  // Check for project login
-  try {
-    execSync('vercel project ls', { stdio: 'ignore' });
-    console.log('✅ Logged in to Vercel\n');
-  } catch (error) {
-    console.log('You need to log in to Vercel first:');
-    try {
-      execSync('vercel login', { stdio: 'inherit' });
-    } catch (error) {
-      console.error('❌ Failed to log in to Vercel');
-      rl.close();
-      return;
-    }
-  }
-  
-  // Get existing .env values if available
-  let existingEnv = {};
-  const envPath = path.join(process.cwd(), '.env');
-  if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, 'utf8');
-    envContent.split('\n').forEach(line => {
-      const match = line.match(/^([^=]+)=(.*)$/);
-      if (match) {
-        existingEnv[match[1]] = match[2];
-      }
-    });
-  }
-  
-  // Collect environment variables
-  console.log('Please enter your environment variables:\n');
-  
-  const openrouterApiKey = await promptForEnvVar(
-    'OPENROUTER_API_KEY', 
-    'from openrouter.ai',
-    existingEnv.OPENROUTER_API_KEY || ''
-  );
-  
-  const pineconeApiKey = await promptForEnvVar(
-    'PINECONE_API_KEY', 
-    'from console.pinecone.io',
-    existingEnv.PINECONE_API_KEY || ''
-  );
-  
-  const pineconeIndexName = await promptForEnvVar(
-    'PINECONE_INDEX_NAME', 
-    'typically "jfkfiles"',
-    existingEnv.PINECONE_INDEX_NAME || 'jfkfiles'
-  );
-  
-  const llmModel = await promptForEnvVar(
-    'LLM_MODEL', 
-    'OpenRouter model to use',
-    existingEnv.LLM_MODEL || 'anthropic/claude-3-opus:beta'
-  );
-  
-  // Create or update local .env file
-  const envContent = `OPENROUTER_API_KEY=${openrouterApiKey}
+  // Create or update .env file
+  const envContent = `OPENROUTER_API_KEY=${openRouterApiKey}
+OPENAI_API_KEY=${openAiApiKey}
 PINECONE_API_KEY=${pineconeApiKey}
 PINECONE_INDEX_NAME=${pineconeIndexName}
 LLM_MODEL=${llmModel}`;
   
-  fs.writeFileSync(envPath, envContent);
-  console.log('\n✅ Created local .env file');
+  fs.writeFileSync('.env', envContent);
+  console.log('✅ Created .env file with environment variables');
   
-  // Ask if user wants to set up Vercel environment
-  rl.question('\nDo you want to set up these environment variables in Vercel? (y/n): ', async (answer) => {
-    if (answer.toLowerCase() === 'y') {
+  // Ask if user wants to set up environment variables in Vercel
+  if (vercelInstalled && vercelLoggedIn) {
+    const setupInVercel = await promptUser('Do you want to set up these environment variables in Vercel? (y/n)', 'y');
+    
+    if (setupInVercel.toLowerCase() === 'y' || setupInVercel.toLowerCase() === 'yes') {
+      console.log('\n🔄 Setting up environment variables in Vercel...');
+      
       try {
-        // Set environment variables in Vercel
-        console.log('\nSetting environment variables in Vercel...');
-        
+        // Add environment variables to Vercel
         execSync(`vercel env add OPENROUTER_API_KEY production`, { stdio: 'inherit' });
+        execSync(`vercel env add OPENAI_API_KEY production`, { stdio: 'inherit' });
         execSync(`vercel env add PINECONE_API_KEY production`, { stdio: 'inherit' });
         execSync(`vercel env add PINECONE_INDEX_NAME production`, { stdio: 'inherit' });
         execSync(`vercel env add LLM_MODEL production`, { stdio: 'inherit' });
         
-        console.log('\n✅ Environment variables set in Vercel');
-        console.log('\nTo deploy your project, run:');
-        console.log('vercel --prod');
+        console.log('✅ Environment variables set up in Vercel');
       } catch (error) {
-        console.error('❌ Failed to set environment variables in Vercel:', error.message);
+        console.error('❌ Failed to set up environment variables in Vercel:', error.message);
       }
     } else {
-      console.log('\nSkipping Vercel environment setup');
-      console.log('You can manually set the environment variables in the Vercel dashboard');
+      console.log('\n⚠️ Skipping Vercel environment setup. You can manually configure these variables in the Vercel dashboard.');
     }
-    
-    console.log('\n✅ Setup complete!');
-    console.log('Next steps:');
-    console.log('1. Run "npm run ingest" to download and process JFK documents');
-    console.log('2. Run "npm run dev" to start the development server');
-    console.log('3. Deploy to Vercel with "vercel --prod"');
-    
-    rl.close();
-  });
-}
+  }
+  
+  console.log('\n🎉 Setup complete! Next steps:');
+  console.log('1. Run `npm run ingest` to download and process JFK Archive documents');
+  console.log('2. Run `npm run dev` to start the development server');
+  console.log('3. Deploy to Vercel with `vercel deploy`');
+  
+  rl.close();
+};
 
-// Run the setup
-setup(); 
+setupEnvironmentVariables(); 
