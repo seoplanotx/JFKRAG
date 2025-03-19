@@ -5,12 +5,28 @@ const { Pinecone } = require('@pinecone-database/pinecone');
 const pdfParse = require('pdf-parse');
 const https = require('https');
 const http = require('http');
+const Tesseract = require('tesseract.js');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
+// Setup PDF.js worker
+const pdfjsWorker = require('pdfjs-dist/legacy/build/pdf.worker.js');
+if (typeof window === 'undefined') {
+  // Node environment
+  globalThis.pdfjsWorker = pdfjsWorker;
+}
+
+// Workaround for Node.js environment
+if (typeof window === 'undefined') {
+  global.DOMParser = require('linkedom').DOMParser;
+}
 
 // Configuration
 const DOCUMENTS_PATH = path.join(process.cwd(), 'documents');
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
-const MAX_DOCUMENTS = 50; // Limit the number of documents to download to avoid overwhelming storage
+const MAX_DOCUMENTS = 5; // Lower limit for testing
+const MAX_PAGES_PER_DOC = 3; // Lower limit for testing
+const USE_OCR = true; // Set to true to enable OCR
 
 // JFK Archive NARA page URL
 const JFK_ARCHIVE_BASE_URL = 'https://www.archives.gov';
@@ -232,11 +248,136 @@ async function downloadBackupDocuments() {
   return downloadedFiles > 0;
 }
 
+// Function to perform OCR on a PDF file using Tesseract
+async function performOcrOnPdf(filePath) {
+  try {
+    console.log(`Performing OCR on ${path.basename(filePath)}...`);
+    
+    // We'll use a simpler approach with Tesseract directly on the PDF
+    // This is not ideal but works in Node.js environment
+    
+    // Create a temporary directory for OCR if it doesn't exist
+    const tempDir = path.join(DOCUMENTS_PATH, 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // Use Tesseract directly on the PDF
+    const { data } = await Tesseract.recognize(
+      filePath,
+      'eng',
+      {
+        logger: message => {
+          if (message.status === 'recognizing text') {
+            console.log(`OCR progress: ${(message.progress * 100).toFixed(2)}%`);
+          }
+        }
+      }
+    );
+    
+    console.log(`OCR completed for ${path.basename(filePath)}`);
+    return data.text || '';
+  } catch (error) {
+    console.error(`Error performing OCR on ${filePath}:`, error.message);
+    return '';
+  }
+}
+
+// Function to process a PDF file
+async function processPdfFile(filePath) {
+  try {
+    console.log(`Processing PDF: ${filePath}`);
+    
+    const fileName = path.basename(filePath);
+    
+    // First try to extract text using pdf-parse
+    let text = '';
+    try {
+      const pdfBuffer = fs.readFileSync(filePath);
+      const data = await pdfParse(pdfBuffer);
+      text = data.text || '';
+    } catch (error) {
+      console.error(`Error parsing PDF ${fileName}:`, error.message);
+    }
+    
+    // If text is too short, try OCR
+    if (text.trim().length < 100 && USE_OCR) {
+      console.log(`Regular text extraction yielded only ${text.length} chars. Trying OCR...`);
+      const ocrText = await performOcrOnPdf(filePath);
+      
+      if (ocrText && ocrText.trim().length > 0) {
+        text = ocrText;
+        console.log(`Successfully extracted ${ocrText.length} chars using OCR`);
+      } else {
+        console.warn(`OCR failed to extract meaningful text from ${fileName}`);
+      }
+    } else {
+      console.log(`Extracted ${text.length} chars using standard parsing`);
+    }
+    
+    // If we still have no text, skip this file
+    if (!text || text.trim().length < 50) {
+      console.warn(`Skipping ${fileName}: insufficient text content`);
+      return 0;
+    }
+    
+    // Split text into chunks
+    const chunks = splitTextIntoChunks(text);
+    console.log(`Split into ${chunks.length} chunks`);
+    
+    let processedChunks = 0;
+    let failedChunks = 0;
+    
+    // Process chunks
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const chunk = chunks[i];
+        if (!chunk || chunk.trim().length < 50) {
+          console.log(`Skipping chunk ${i}: too short (${chunk ? chunk.length : 0} chars)`);
+          continue;
+        }
+        
+        const embedding = await getEmbedding(chunk);
+        
+        // Create a unique ID for this chunk
+        const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
+        
+        // Upsert the vector to Pinecone
+        await index.upsert([{
+          id: id,
+          values: embedding,
+          metadata: {
+            text: chunk,
+            source: fileName,
+            chunk: i,
+          }
+        }]);
+        
+        processedChunks++;
+        console.log(`Processed chunk ${processedChunks}/${chunks.length} from ${fileName}`);
+        
+        // Add a delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        failedChunks++;
+        console.error(`Error processing chunk ${i} from ${fileName}:`, error.message);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Longer delay after error
+      }
+    }
+    
+    console.log(`Successfully processed ${processedChunks}/${chunks.length} chunks from ${fileName} (${failedChunks} failed)`);
+    return processedChunks;
+  } catch (error) {
+    console.error(`Error processing PDF ${filePath}:`, error);
+    return 0;
+  }
+}
+
 // Function to get embedding from OpenRouter
 async function getEmbedding(text) {
   try {
-    if (!text || text.trim().length < 10) {
-      console.warn('Text too short for embedding, skipping:', text);
+    if (!text || text.trim().length < 50) {
+      console.warn('Text too short for embedding, skipping');
       throw new Error('Text is too short for embedding');
     }
     
@@ -281,6 +422,10 @@ async function getEmbedding(text) {
 function splitTextIntoChunks(text, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   const chunks = [];
   
+  if (!text || text.length <= 0) {
+    return chunks;
+  }
+  
   if (text.length <= chunkSize) {
     chunks.push(text);
     return chunks;
@@ -323,78 +468,9 @@ function splitTextIntoChunks(text, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERL
   return chunks;
 }
 
-// Function to process a PDF file
-async function processPdfFile(filePath) {
-  try {
-    console.log(`Processing PDF: ${filePath}`);
-    
-    const pdfBuffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(pdfBuffer);
-    
-    const fileName = path.basename(filePath);
-    const chunks = splitTextIntoChunks(pdfData.text);
-    
-    console.log(`Extracted ${chunks.length} chunks from ${fileName}`);
-    
-    let processedChunks = 0;
-    let failedChunks = 0;
-    
-    // Process in batches to avoid overwhelming the API
-    for (let i = 0; i < chunks.length; i++) {
-      try {
-        const chunk = chunks[i];
-        if (!chunk || chunk.length < 10) {
-          console.log(`Skipping chunk ${i}: Text too short`);
-          continue;
-        }
-        
-        const embedding = await getEmbedding(chunk);
-        
-        if (!embedding || !Array.isArray(embedding)) {
-          console.warn(`Invalid embedding for chunk ${i}, skipping`);
-          failedChunks++;
-          continue;
-        }
-        
-        // Create a unique ID for this chunk
-        const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
-        
-        // Upsert the vector to Pinecone
-        const upsertResponse = await index.upsert([{
-          id: id,
-          values: embedding,
-          metadata: {
-            text: chunk,
-            source: fileName,
-            page: Math.floor(i / 2) + 1, // Rough estimate of page numbers
-            chunk: i,
-          }
-        }]);
-        
-        processedChunks++;
-        console.log(`Processed chunk ${processedChunks}/${chunks.length} from ${fileName}`);
-        
-        // Add a small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (error) {
-        failedChunks++;
-        console.error(`Error processing chunk ${i} from ${fileName}:`, error.message);
-        // Continue with next chunk despite error
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Longer delay after error
-      }
-    }
-    
-    console.log(`Successfully processed ${processedChunks}/${chunks.length} chunks from ${fileName} (${failedChunks} failed)`);
-    return processedChunks;
-  } catch (error) {
-    console.error(`Error processing PDF ${filePath}:`, error);
-    return 0;
-  }
-}
-
 // Main function to ingest documents
 async function ingestDocuments() {
-  console.log('Starting document ingestion process...');
+  console.log('Starting document ingestion process with OCR support...');
   
   try {
     // Validate environment variables first
@@ -418,7 +494,7 @@ async function ingestDocuments() {
       return;
     }
     
-    console.log(`Found ${files.length} PDF files to process.`);
+    console.log(`Found ${files.length} PDF files to process with OCR capability.`);
     
     let totalProcessedChunks = 0;
     

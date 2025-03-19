@@ -15,10 +15,13 @@
   "dependencies": {
     "@pinecone-database/pinecone": "^2.1.0",
     "dotenv": "^16.4.7",
+    "linkedom": "^0.16.8",
     "next": "^14.2.0",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "2.16.105",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tesseract.js": "^5.0.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
