@@ -39,7 +39,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${openAiApiKey}`,
       },
       body: JSON.stringify({
-        model: 'text-embedding-ada-002',
+        model: 'text-embedding-3-small',
         input: query,
       }),
     });
