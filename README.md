@@ -34,7 +34,7 @@ You'll need to set up the following environment variables in your Vercel deploym
 PINECONE_API_KEY=your_pinecone_api_key
 PINECONE_INDEX_NAME=jfk-documents
 OPENROUTER_API_KEY=your_openrouter_api_key
-LLM_MODEL=anthropic/claude-3-opus:beta
+LLM_MODEL=qwen/qwq-32b
 ```
 
 You can customize the LLM_MODEL to any model supported by OpenRouter.
