@@ -6,26 +6,12 @@ const pdfParse = require('pdf-parse');
 const https = require('https');
 const http = require('http');
 const Tesseract = require('tesseract.js');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-
-// Setup PDF.js worker
-const pdfjsWorker = require('pdfjs-dist/legacy/build/pdf.worker.js');
-if (typeof window === 'undefined') {
-  // Node environment
-  globalThis.pdfjsWorker = pdfjsWorker;
-}
-
-// Workaround for Node.js environment
-if (typeof window === 'undefined') {
-  global.DOMParser = require('linkedom').DOMParser;
-}
 
 // Configuration
 const DOCUMENTS_PATH = path.join(process.cwd(), 'documents');
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
 const MAX_DOCUMENTS = 5; // Lower limit for testing
-const MAX_PAGES_PER_DOC = 3; // Lower limit for testing
 const USE_OCR = true; // Set to true to enable OCR
 
 // JFK Archive NARA page URL
@@ -253,9 +239,6 @@ async function performOcrOnPdf(filePath) {
   try {
     console.log(`Performing OCR on ${path.basename(filePath)}...`);
     
-    // We'll use a simpler approach with Tesseract directly on the PDF
-    // This is not ideal but works in Node.js environment
-    
     // Create a temporary directory for OCR if it doesn't exist
     const tempDir = path.join(DOCUMENTS_PATH, 'temp');
     if (!fs.existsSync(tempDir)) {
@@ -263,6 +246,7 @@ async function performOcrOnPdf(filePath) {
     }
     
     // Use Tesseract directly on the PDF
+    // Note: This is not ideal for multi-page PDFs but works for simple cases
     const { data } = await Tesseract.recognize(
       filePath,
       'eng',
