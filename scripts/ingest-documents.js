@@ -48,8 +48,8 @@ async function validateEnvironment() {
         metric: 'cosine',
         spec: {
           serverless: {
-            cloud: 'aws',
-            region: 'us-west-2',
+            cloud: 'gcp',
+            region: 'us-central1',
           }
         },
         waitUntilReady: true,
