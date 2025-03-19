@@ -9,7 +9,7 @@ This is a simplified version of the JFK RAG system for Vercel deployment. It pro
 - Integration with Pinecone for vector storage
 - OpenRouter API for embeddings and LLM generation
 - Tailwind CSS for styling
-- Automatic document fetching from JFK Archives
+- Automatic document fetching from National Archives JFK Records Collection
 - PDF document ingestion script
 - Easy setup script for environment variables
 
@@ -67,7 +67,7 @@ npm run ingest
 ```
 
 The script will:
-- Automatically download key JFK documents from the National Archives
+- Automatically scrape and download JFK documents from the National Archives' official [JFK Collection 2025 release page](https://www.archives.gov/research/jfk/release-2025)
 - Process each PDF document
 - Split text into chunks
 - Generate embeddings using OpenRouter
@@ -115,9 +115,9 @@ This project is designed to be deployed to Vercel:
 
 - `/pages/api/query.js`: Serverless API route for handling queries
 - `/pages/index.js`: Main user interface
-- `/scripts/ingest-documents.js`: Document ingestion script with automatic fetching
+- `/scripts/ingest-documents.js`: Document ingestion script with automatic NARA page scraping
 - `/scripts/setup-vercel-env.js`: Setup script for environment variables
 - Pinecone for vector search
 - OpenRouter for embeddings and generation
 
-This is a simplified frontend that connects directly to Pinecone. The document ingestion process automatically downloads JFK documents and prepares them for the vector database. 
+This is a simplified frontend that connects directly to Pinecone. The document ingestion process automatically downloads JFK documents from the National Archives and prepares them for the vector database. 
