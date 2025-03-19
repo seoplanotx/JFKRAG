@@ -221,7 +221,7 @@ async function createEmbeddings(text) {
         'X-Title': 'JFK RAG Application',
       },
       body: JSON.stringify({
-        model: 'text-embedding-ada-002',
+        model: 'openai/text-embedding-ada-002',
         input: text.slice(0, 8000), // Limit input size
       }),
     });

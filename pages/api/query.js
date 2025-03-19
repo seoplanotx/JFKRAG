@@ -28,7 +28,7 @@ export default async function handler(req, res) {
         'X-Title': 'JFK RAG Application',
       },
       body: JSON.stringify({
-        model: 'text-embedding-ada-002',
+        model: 'openai/text-embedding-ada-002',
         input: query,
       }),
     });
