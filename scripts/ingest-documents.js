@@ -5,6 +5,7 @@ const { Pinecone } = require('@pinecone-database/pinecone');
 const pdfParse = require('pdf-parse');
 const fetch = require('node-fetch');
 const { JSDOM } = require('jsdom');
+const OpenAI = require('openai');
 
 // Configuration
 const DOCUMENTS_PATH = path.join(process.cwd(), 'documents');
@@ -22,10 +23,15 @@ const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
 });
 
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 // Function to validate environment variables
 function validateEnvironment() {
-  if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY is not set in environment variables');
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is not set in environment variables');
   }
   
   if (!process.env.PINECONE_API_KEY) {
@@ -202,7 +208,7 @@ function splitIntoChunks(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   return chunks;
 }
 
-// Function to create embeddings using OpenRouter
+// Function to create embeddings using OpenAI API
 async function createEmbeddings(text) {
   if (!text || text.trim().length < 10) {
     console.warn('Text too short for embedding, skipping');
@@ -212,36 +218,19 @@ async function createEmbeddings(text) {
   try {
     console.log(`Creating embedding for text of length ${text.length} characters...`);
     
-    const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://jfk-rag.vercel.app',
-        'X-Title': 'JFK RAG Application',
-      },
-      body: JSON.stringify({
-        model: 'openai/text-embedding-ada-002',
-        input: text.slice(0, 8000), // Limit input size
-      }),
+    // Use OpenAI's embeddings API
+    const response = await openai.embeddings.create({
+      model: "text-embedding-ada-002",
+      input: text.slice(0, 8000), // Limit input size
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`OpenRouter API response status: ${response.status}`);
-      console.error(`OpenRouter API response headers:`, JSON.stringify([...response.headers.entries()]));
-      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
-    }
-    
-    const data = await response.json();
-    
-    if (!data.data || !data.data[0] || !data.data[0].embedding) {
-      console.error('Unexpected response format from OpenRouter:', JSON.stringify(data));
+    if (!response || !response.data || !response.data[0] || !response.data[0].embedding) {
+      console.error('Unexpected response format from OpenAI:', JSON.stringify(response));
       throw new Error('Invalid response format from embeddings API');
     }
     
-    console.log(`Successfully generated embedding with ${data.data[0].embedding.length} dimensions`);
-    return data.data[0].embedding;
+    console.log(`Successfully generated embedding with ${response.data[0].embedding.length} dimensions`);
+    return response.data[0].embedding;
   } catch (error) {
     console.error(`Error creating embeddings: ${error.message}`);
     throw error;

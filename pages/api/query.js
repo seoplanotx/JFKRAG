@@ -1,4 +1,5 @@
 import { Pinecone } from '@pinecone-database/pinecone';
+import OpenAI from 'openai';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -12,33 +13,27 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Query is required' });
     }
 
-    // Initialize OpenRouter config
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterApiKey) {
-      return res.status(500).json({ error: 'OpenRouter API key is not configured' });
+    // Initialize OpenAI client
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      return res.status(500).json({ error: 'OpenAI API key is not configured' });
     }
+    
+    const openai = new OpenAI({
+      apiKey: openaiApiKey,
+    });
 
-    // Get embedding for query using OpenRouter
-    const embeddingResponse = await fetch('https://openrouter.ai/api/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openRouterApiKey}`,
-        'HTTP-Referer': 'https://jfk-rag-system.com',
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: query,
-      }),
+    // Get embedding for query using OpenAI
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-ada-002",
+      input: query,
     });
     
-    const embeddingData = await embeddingResponse.json();
-    
-    if (!embeddingData.data || !embeddingData.data[0]) {
+    if (!embeddingResponse.data || !embeddingResponse.data[0]) {
       throw new Error('Failed to generate embedding');
     }
     
-    const embedding = embeddingData.data[0].embedding;
+    const embedding = embeddingResponse.data[0].embedding;
     
     // Query Pinecone
     const pinecone = new Pinecone({
@@ -76,39 +71,29 @@ export default async function handler(req, res) {
       url: match.metadata.url || '',
     }));
     
-    // Generate answer with OpenRouter
-    const completion = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openRouterApiKey}`,
-        'HTTP-Referer': 'https://jfk-rag-system.com',
-      },
-      body: JSON.stringify({
-        model: process.env.LLM_MODEL || 'anthropic/claude-3-opus:beta',
-        messages: [
-          {
-            role: "system",
-            content: `You are an AI assistant that answers questions about JFK documents based on the following context. 
+    // Generate answer with OpenAI
+    const chatCompletion = await openai.chat.completions.create({
+      model: process.env.LLM_MODEL || "gpt-4-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `You are an AI assistant that answers questions about JFK documents based on the following context. 
 If the information is not in the context, say you don't know.
 Always cite the document sources in your answer using numbers like [1], [2], etc.
 When citing sources, reference the specific documents that contain the information.
 
 Context:
 ${context}`
-          },
-          { role: "user", content: query }
-        ]
-      }),
+        },
+        { role: "user", content: query }
+      ]
     });
     
-    const completionData = await completion.json();
-    
-    if (!completionData.choices || !completionData.choices[0]) {
+    if (!chatCompletion.choices || !chatCompletion.choices[0]) {
       throw new Error('Failed to generate answer');
     }
     
-    const answer = completionData.choices[0].message.content;
+    const answer = chatCompletion.choices[0].message.content;
     
     res.status(200).json({ answer, sources });
   } catch (error) {

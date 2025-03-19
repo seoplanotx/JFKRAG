@@ -84,10 +84,10 @@ async function setup() {
   // Collect environment variables
   console.log('Please enter your environment variables:\n');
   
-  const openrouterApiKey = await promptForEnvVar(
-    'OPENROUTER_API_KEY', 
-    'from openrouter.ai',
-    existingEnv.OPENROUTER_API_KEY || ''
+  const openaiApiKey = await promptForEnvVar(
+    'OPENAI_API_KEY', 
+    'from OpenAI (platform.openai.com)',
+    existingEnv.OPENAI_API_KEY || ''
   );
   
   const pineconeApiKey = await promptForEnvVar(
@@ -104,12 +104,12 @@ async function setup() {
   
   const llmModel = await promptForEnvVar(
     'LLM_MODEL', 
-    'OpenRouter model to use',
-    existingEnv.LLM_MODEL || 'anthropic/claude-3-opus:beta'
+    'OpenAI model to use',
+    existingEnv.LLM_MODEL || 'gpt-4-turbo'
   );
   
   // Create or update local .env file
-  const envContent = `OPENROUTER_API_KEY=${openrouterApiKey}
+  const envContent = `OPENAI_API_KEY=${openaiApiKey}
 PINECONE_API_KEY=${pineconeApiKey}
 PINECONE_INDEX_NAME=${pineconeIndexName}
 LLM_MODEL=${llmModel}`;
@@ -124,7 +124,7 @@ LLM_MODEL=${llmModel}`;
         // Set environment variables in Vercel
         console.log('\nSetting environment variables in Vercel...');
         
-        execSync(`vercel env add OPENROUTER_API_KEY production`, { stdio: 'inherit' });
+        execSync(`vercel env add OPENAI_API_KEY production`, { stdio: 'inherit' });
         execSync(`vercel env add PINECONE_API_KEY production`, { stdio: 'inherit' });
         execSync(`vercel env add PINECONE_INDEX_NAME production`, { stdio: 'inherit' });
         execSync(`vercel env add LLM_MODEL production`, { stdio: 'inherit' });
