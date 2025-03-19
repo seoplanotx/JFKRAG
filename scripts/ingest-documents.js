@@ -44,8 +44,10 @@ async function validateEnvironment() {
       console.log(`Creating Pinecone index: ${process.env.PINECONE_INDEX_NAME}`);
       await pinecone.createIndex({
         name: process.env.PINECONE_INDEX_NAME,
-        dimension: 1536, // OpenAI embeddings are 1536 dimensions
-        metric: 'cosine',
+        spec: {
+          dimension: 1536, // OpenAI embeddings are 1536 dimensions
+          metric: 'cosine'
+        }
       });
       console.log('Index created successfully');
     }
