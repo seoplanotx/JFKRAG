@@ -29,18 +29,25 @@ if (!process.env.OPENAI_API_KEY) {
 }
 
 // Function to validate environment variables
-function validateEnvironment() {
-  if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY is not set in environment variables');
-  }
+async function validateEnvironment() {
+  console.log('Using Pinecone index:', process.env.PINECONE_INDEX_NAME);
   
-  if (!process.env.PINECONE_API_KEY) {
-    throw new Error('PINECONE_API_KEY is not set in environment variables');
-  }
+  // Get a list of indexes
+  const indexList = await pinecone.listIndexes();
   
-  const indexName = process.env.PINECONE_INDEX || 'jfkfiles';
-  console.log(`Using Pinecone index: ${indexName}`);
-  return indexName;
+  // Check if our index exists
+  const indexExists = indexList.some(index => index.name === process.env.PINECONE_INDEX_NAME);
+  
+  // If the index doesn't exist, create it
+  if (!indexExists) {
+    console.log(`Creating Pinecone index: ${process.env.PINECONE_INDEX_NAME}`);
+    await pinecone.createIndex({
+      name: process.env.PINECONE_INDEX_NAME,
+      dimension: 1536, // OpenAI embeddings are 1536 dimensions
+      metric: 'cosine',
+    });
+    console.log('Index created successfully');
+  }
 }
 
 // Function to download a file
@@ -248,91 +255,89 @@ async function createEmbedding(text) {
   }
 }
 
-// Process documents and store in Pinecone
+// Function to process documents and add to Pinecone
 async function processDocuments(indexName) {
-  try {
-    const index = pinecone.Index(indexName);
-    
-    // Get list of PDF files
-    const files = fs.readdirSync(DOCUMENTS_PATH)
-      .filter(file => file.toLowerCase().endsWith('.pdf'))
-      .map(file => path.join(DOCUMENTS_PATH, file));
-    
-    console.log(`Found ${files.length} PDF files to process.`);
-    
-    let totalProcessedChunks = 0;
-    
-    // Process each file individually
-    for (const filePath of files) {
-      const fileName = path.basename(filePath);
-      console.log(`\nProcessing file: ${fileName}`);
-      
-      try {
-        // Extract text from PDF
-        const extractedText = await extractTextFromPDF(filePath);
-        
-        if (!extractedText || extractedText.trim().length < 10) {
-          console.warn(`Insufficient text extracted from ${fileName}, skipping...`);
-          continue;
-        }
-        
-        // Split text into manageable chunks
-        const chunks = splitIntoChunks(extractedText);
-        console.log(`Split document into ${chunks.length} chunks`);
-        
-        // Process each chunk
-        let processedChunks = 0;
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          
-          // Skip tiny chunks
-          if (chunk.trim().length < 10) continue;
-          
-          try {
-            console.log(`Creating embedding for chunk ${i+1}/${chunks.length} of ${fileName}...`);
-            const embedding = await createEmbedding(chunk);
-            
-            // Create a unique ID
-            const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
-            
-            // Store in Pinecone
-            await index.upsert([
-              {
-                id,
-                values: embedding,
-                metadata: {
-                  text: chunk,
-                  source: fileName,
-                  chunk: i
-                }
-              }
-            ]);
-            
-            processedChunks++;
-            console.log(`Successfully stored embedding ${id} in Pinecone`);
-            
-            // Add a small delay to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 200));
-          } catch (error) {
-            console.error(`Error processing chunk ${i+1} of ${fileName}: ${error.message}`);
-            // Continue with next chunk
-          }
-        }
-        
-        totalProcessedChunks += processedChunks;
-        console.log(`Completed processing ${fileName}: ${processedChunks}/${chunks.length} chunks successfully stored`);
-      } catch (error) {
-        console.error(`Error processing file ${fileName}: ${error.message}`);
-        // Continue with next file
-      }
-    }
-    
-    console.log(`\nDocument ingestion completed. Successfully processed ${totalProcessedChunks} chunks from ${files.length} files.`);
-    console.log(`These documents are now searchable in your Pinecone index: ${indexName}`);
-  } catch (error) {
-    console.error(`Error processing documents: ${error.message}`);
-    throw error;
+  const pdfFiles = await getPDFFiles();
+  
+  if (pdfFiles.length === 0) {
+    console.log('No PDF files found to process');
+    return;
   }
+  
+  console.log(`Found ${pdfFiles.length} PDF files to process.\n`);
+  
+  const pineconeIndex = pinecone.index(indexName);
+  
+  let totalSuccessfulChunks = 0;
+  let totalProcessedFiles = 0;
+  
+  // Process each file individually
+  for (const filePath of pdfFiles) {
+    const fileName = path.basename(filePath);
+    console.log(`\nProcessing file: ${fileName}`);
+    
+    try {
+      // Extract text from PDF
+      const extractedText = await extractTextFromPDF(filePath);
+      
+      if (!extractedText || extractedText.trim().length < 10) {
+        console.warn(`Insufficient text extracted from ${fileName}, skipping...`);
+        continue;
+      }
+      
+      // Split text into manageable chunks
+      const chunks = splitIntoChunks(extractedText);
+      console.log(`Split document into ${chunks.length} chunks`);
+      
+      // Process each chunk
+      let processedChunks = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        
+        // Skip tiny chunks
+        if (chunk.trim().length < 10) continue;
+        
+        try {
+          console.log(`Creating embedding for chunk ${i+1}/${chunks.length} of ${fileName}...`);
+          const embedding = await createEmbedding(chunk);
+          
+          // Create a unique ID
+          const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
+          
+          // Store in Pinecone
+          await pineconeIndex.upsert([
+            {
+              id,
+              values: embedding,
+              metadata: {
+                text: chunk,
+                source: fileName,
+                chunk: i
+              }
+            }
+          ]);
+          
+          processedChunks++;
+          console.log(`Successfully stored embedding ${id} in Pinecone`);
+          
+          // Add a small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.error(`Error processing chunk ${i+1} of ${fileName}: ${error.message}`);
+          // Continue with next chunk
+        }
+      }
+      
+      totalSuccessfulChunks += processedChunks;
+      console.log(`Completed processing ${fileName}: ${processedChunks}/${chunks.length} chunks successfully stored`);
+    } catch (error) {
+      console.error(`Error processing file ${fileName}: ${error.message}`);
+      // Continue with next file
+    }
+  }
+  
+  console.log(`\nDocument ingestion completed. Successfully processed ${totalSuccessfulChunks} chunks from ${pdfFiles.length} files.`);
+  console.log(`These documents are now searchable in your Pinecone index: ${indexName}`);
 }
 
 // Main function to ingest documents
@@ -341,13 +346,13 @@ async function ingestDocuments() {
   
   try {
     // Validate environment variables
-    const indexName = validateEnvironment();
+    await validateEnvironment();
     
     // Download JFK Archive documents
     await downloadJFKDocuments();
     
     // Process documents and store in Pinecone
-    await processDocuments(indexName);
+    await processDocuments(process.env.PINECONE_INDEX_NAME);
     
     console.log('\nIngest process completed successfully!');
   } catch (error) {
@@ -360,4 +365,18 @@ async function ingestDocuments() {
 ingestDocuments().catch(error => {
   console.error('Fatal error:', error);
   process.exit(1);
-}); 
+});
+
+// Function to get PDF files
+async function getPDFFiles() {
+  try {
+    const files = fs.readdirSync(DOCUMENTS_PATH)
+      .filter(file => file.toLowerCase().endsWith('.pdf'))
+      .map(file => path.join(DOCUMENTS_PATH, file));
+    
+    return files;
+  } catch (error) {
+    console.error(`Error getting PDF files: ${error.message}`);
+    return [];
+  }
+} 
