@@ -26,6 +26,30 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to view the application.
 
+## End-to-End Testing
+
+This project uses Playwright for end-to-end testing. The tests verify that the application UI works correctly and handles API interactions properly.
+
+To run the tests locally:
+
+```bash
+# Install Playwright browsers
+npx playwright install
+
+# Run the tests
+npm run test:e2e
+
+# Run tests with browser UI visible
+npm run test:e2e:headed
+```
+
+The tests run automatically on:
+- Push to main branch
+- Pull requests
+- Manual trigger via GitHub Actions
+
+The tests use the live Vercel deployment to ensure everything works in production.
+
 ## Environment Variables
 
 You'll need to set up the following environment variables in your Vercel deployment:
