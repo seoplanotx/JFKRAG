@@ -10,7 +10,6 @@ This is a simplified version of the JFK RAG system for Vercel deployment. It pro
 - OpenRouter API for embeddings and LLM generation
 - Tailwind CSS for styling
 - Automatic document fetching from National Archives JFK Records Collection
-- OCR processing for scanned documents
 - PDF document ingestion script
 - Easy setup script for environment variables
 
@@ -69,19 +68,10 @@ npm run ingest
 
 The script will:
 - Automatically scrape and download JFK documents from the National Archives' official [JFK Collection 2025 release page](https://www.archives.gov/research/jfk/release-2025)
-- Process each PDF document, using OCR for scanned documents
+- Process each PDF document
 - Split text into chunks
 - Generate embeddings using OpenRouter
 - Store vectors in your Pinecone database
-
-### OCR Processing
-
-The system includes Optical Character Recognition (OCR) capabilities:
-
-- Automatically detects when documents are scanned images rather than text
-- Uses Tesseract.js to extract text from document images
-- Enables searching through historically significant documents that are only available as scans
-- Works with both modern PDFs and scanned historical archives
 
 You can also add your own PDF files to the `documents` directory, and they will be processed along with the automatically downloaded ones.
 
@@ -125,10 +115,9 @@ This project is designed to be deployed to Vercel:
 
 - `/pages/api/query.js`: Serverless API route for handling queries
 - `/pages/index.js`: Main user interface
-- `/scripts/ingest-documents.js`: Document ingestion script with OCR and automatic NARA page scraping
+- `/scripts/ingest-documents.js`: Document ingestion script with automatic NARA page scraping
 - `/scripts/setup-vercel-env.js`: Setup script for environment variables
 - Pinecone for vector search
 - OpenRouter for embeddings and generation
-- Tesseract.js for OCR processing
 
-This is a simplified frontend that connects directly to Pinecone. The document ingestion process automatically downloads JFK documents from the National Archives, performs OCR when needed, and prepares them for the vector database. 
+This is a simplified frontend that connects directly to Pinecone. The document ingestion process automatically downloads JFK documents from the National Archives and prepares them for the vector database. 
