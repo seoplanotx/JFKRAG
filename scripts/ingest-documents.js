@@ -47,10 +47,7 @@ async function validateEnvironment() {
         dimension: 1536, // OpenAI embeddings are 1536 dimensions
         metric: 'cosine',
         spec: {
-          serverless: {
-            cloud: 'gcp',
-            region: 'us-central1',
-          }
+          starter: {}
         },
         waitUntilReady: true,
       });
