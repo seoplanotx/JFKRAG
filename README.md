@@ -9,6 +9,18 @@ This is a simplified version of the JFK RAG system for Vercel deployment. It pro
 - Integration with Pinecone for vector storage
 - OpenRouter API for embeddings and LLM generation
 - Tailwind CSS for styling
+- Automatic document fetching from JFK Archives
+- PDF document ingestion script
+- Easy setup script for environment variables
+
+## Quick Start
+
+1. Clone this repository
+2. Install dependencies: `npm install`
+3. Run the setup script to configure environment variables: `npm run setup`
+4. Run the document ingestion script: `npm run ingest`
+5. Start the development server: `npm run dev`
+6. Deploy to Vercel: `vercel --prod`
 
 ## Development
 
@@ -25,6 +37,45 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to view the application.
+
+## Environment Setup
+
+The project includes a setup script to help you configure environment variables both locally and on Vercel:
+
+```bash
+npm run setup
+```
+
+This script will:
+1. Check if Vercel CLI is installed
+2. Guide you through entering your API keys
+3. Create a local `.env` file
+4. Optionally set up the environment variables in your Vercel project
+
+Required environment variables:
+- `OPENROUTER_API_KEY` - For embeddings and LLM generation
+- `PINECONE_API_KEY` - For vector database access
+- `PINECONE_INDEX_NAME` - Typically "jfkfiles"
+- `LLM_MODEL` - OpenRouter model to use (default: "anthropic/claude-3-opus:beta")
+
+## Document Ingestion
+
+Before the RAG system will work, you need to ingest documents into the Pinecone database:
+
+```bash
+npm run ingest
+```
+
+The script will:
+- Automatically download key JFK documents from the National Archives
+- Process each PDF document
+- Split text into chunks
+- Generate embeddings using OpenRouter
+- Store vectors in your Pinecone database
+
+You can also add your own PDF files to the `documents` directory, and they will be processed along with the automatically downloaded ones.
+
+After ingestion completes, your RAG system will be able to search and retrieve information from the documents.
 
 ## End-to-End Testing
 
@@ -50,19 +101,6 @@ The tests run automatically on:
 
 The tests use the live Vercel deployment to ensure everything works in production.
 
-## Environment Variables
-
-You'll need to set up the following environment variables in your Vercel deployment:
-
-```
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX_NAME=jfk-documents
-OPENROUTER_API_KEY=your_openrouter_api_key
-LLM_MODEL=qwen/qwq-32b
-```
-
-You can customize the LLM_MODEL to any model supported by OpenRouter.
-
 ## Deployment
 
 This project is designed to be deployed to Vercel:
@@ -70,14 +108,16 @@ This project is designed to be deployed to Vercel:
 1. Push the code to GitHub
 2. Create a new project in Vercel
 3. Connect to your GitHub repository
-4. Set the environment variables
-5. Deploy
+4. Set up environment variables (use `npm run setup` to help with this)
+5. Deploy with `vercel --prod`
 
 ## Architecture
 
 - `/pages/api/query.js`: Serverless API route for handling queries
 - `/pages/index.js`: Main user interface
+- `/scripts/ingest-documents.js`: Document ingestion script with automatic fetching
+- `/scripts/setup-vercel-env.js`: Setup script for environment variables
 - Pinecone for vector search
 - OpenRouter for embeddings and generation
 
-This is a simplified frontend that connects directly to Pinecone. The document ingestion and processing is handled separately by the main JFK RAG system backend. 
+This is a simplified frontend that connects directly to Pinecone. The document ingestion process automatically downloads JFK documents and prepares them for the vector database. 

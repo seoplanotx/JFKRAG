@@ -125,6 +125,7 @@ export default function Home() {
       <footer className="bg-white border-t mt-12 py-6">
         <div className="container mx-auto px-4 text-center text-gray-500">
           <p>JFK Archives RAG System - Powered by Vercel, Pinecone, and OpenRouter</p>
+          <p className="text-sm mt-2">Automatically fetches key documents from the JFK Archives</p>
         </div>
       </footer>
     </div>
