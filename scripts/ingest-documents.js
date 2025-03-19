@@ -210,6 +210,8 @@ async function createEmbeddings(text) {
   }
   
   try {
+    console.log(`Creating embedding for text of length ${text.length} characters...`);
+    
     const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -219,17 +221,26 @@ async function createEmbeddings(text) {
         'X-Title': 'JFK RAG Application',
       },
       body: JSON.stringify({
-        model: 'openai/text-embedding-3-small',
+        model: 'openai/text-embedding-ada-002',
         input: text.slice(0, 8000), // Limit input size
       }),
     });
     
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`OpenRouter API response status: ${response.status}`);
+      console.error(`OpenRouter API response headers:`, JSON.stringify([...response.headers.entries()]));
       throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
+    
+    if (!data.data || !data.data[0] || !data.data[0].embedding) {
+      console.error('Unexpected response format from OpenRouter:', JSON.stringify(data));
+      throw new Error('Invalid response format from embeddings API');
+    }
+    
+    console.log(`Successfully generated embedding with ${data.data[0].embedding.length} dimensions`);
     return data.data[0].embedding;
   } catch (error) {
     console.error(`Error creating embeddings: ${error.message}`);
