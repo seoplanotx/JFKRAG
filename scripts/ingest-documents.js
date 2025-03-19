@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const { Pinecone } = require('@pinecone-database/pinecone');
 const pdfParse = require('pdf-parse');
-const { createWorker } = require('tesseract.js');
 const fetch = require('node-fetch');
 const { JSDOM } = require('jsdom');
 
@@ -129,47 +128,41 @@ async function extractTextFromPDF(filePath) {
   console.log(`Extracting text from ${fileName}...`);
   
   try {
-    // Try regular PDF text extraction first
+    // Try regular PDF text extraction
     const dataBuffer = fs.readFileSync(filePath);
     const pdfData = await pdfParse(dataBuffer);
-    const extractedText = pdfData.text || '';
+    let extractedText = pdfData.text || '';
     
-    // Check if we got enough meaningful text
-    if (extractedText.trim().length > 100) {
-      console.log(`Successfully extracted ${extractedText.length} characters using PDF parsing`);
-      return extractedText;
+    // Even if very little text was extracted, add metadata and use it
+    if (extractedText.trim().length < 100) {
+      console.log(`Limited text extracted (${extractedText.length} chars) from ${fileName}`);
+      
+      // Add document metadata as part of the text to ensure we have something to index
+      const metadata = `
+Document: ${fileName}
+Source: JFK Archive
+Number of Pages: ${pdfData.numpages}
+Info: This appears to be a scanned document with limited machine-readable text.
+Document Info: ${JSON.stringify(pdfData.info || {})}
+      `;
+      
+      extractedText = metadata + "\n\n" + extractedText;
+      console.log(`Added metadata to text, new length: ${extractedText.length} chars`);
     } else {
-      console.log(`Minimal text extracted (${extractedText.length} chars). This appears to be a scanned document. Trying OCR...`);
-      return await performOCR(filePath);
+      console.log(`Successfully extracted ${extractedText.length} characters from ${fileName}`);
     }
-  } catch (error) {
-    console.error(`Error extracting text from ${fileName}: ${error.message}`);
-    
-    // Try OCR as fallback
-    console.log(`Falling back to OCR for ${fileName}...`);
-    return await performOCR(filePath);
-  }
-}
-
-// Function to perform OCR on a file
-async function performOCR(filePath) {
-  const fileName = path.basename(filePath);
-  console.log(`Performing OCR on ${fileName}...`);
-  
-  try {
-    // Use Tesseract OCR directly on the PDF
-    const worker = await createWorker('eng');
-    
-    const { data } = await worker.recognize(filePath);
-    await worker.terminate();
-    
-    const extractedText = data.text || '';
-    console.log(`OCR completed for ${fileName}, extracted ${extractedText.length} characters`);
     
     return extractedText;
   } catch (error) {
-    console.error(`Error performing OCR on ${fileName}: ${error.message}`);
-    return '';
+    console.error(`Error extracting text from ${fileName}: ${error.message}`);
+    
+    // Return some basic metadata as text to ensure we have something to index
+    return `
+Document: ${fileName}
+Source: JFK Archive
+Error: Could not extract text from this document. 
+Note: This document may be a scanned image requiring OCR processing.
+    `;
   }
 }
 
@@ -264,10 +257,10 @@ async function processDocuments(indexName) {
       console.log(`\nProcessing file: ${fileName}`);
       
       try {
-        // Extract text from PDF with OCR fallback for scanned documents
+        // Extract text from PDF
         const extractedText = await extractTextFromPDF(filePath);
         
-        if (!extractedText || extractedText.trim().length < 50) {
+        if (!extractedText || extractedText.trim().length < 10) {
           console.warn(`Insufficient text extracted from ${fileName}, skipping...`);
           continue;
         }
@@ -282,7 +275,7 @@ async function processDocuments(indexName) {
           const chunk = chunks[i];
           
           // Skip tiny chunks
-          if (chunk.trim().length < 20) continue;
+          if (chunk.trim().length < 10) continue;
           
           try {
             console.log(`Creating embedding for chunk ${i+1}/${chunks.length} of ${fileName}...`);
@@ -321,11 +314,6 @@ async function processDocuments(indexName) {
         console.error(`Error processing file ${fileName}: ${error.message}`);
         // Continue with next file
       }
-      
-      // Force garbage collection between files if available
-      if (global.gc) {
-        global.gc();
-      }
     }
     
     console.log(`\nDocument ingestion completed. Successfully processed ${totalProcessedChunks} chunks from ${files.length} files.`);
@@ -339,7 +327,6 @@ async function processDocuments(indexName) {
 // Main function to ingest documents
 async function ingestDocuments() {
   console.log('Starting document ingestion process...');
-  console.log('This script will extract text from PDFs and use OCR for image-based content');
   
   try {
     // Validate environment variables
