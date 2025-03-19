@@ -10,7 +10,7 @@ const { JSDOM } = require('jsdom');
 const DOCUMENTS_PATH = path.join(process.cwd(), 'documents');
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
-const MAX_DOCUMENTS = 5; // Limit for testing
+// No document limit - process all files
 
 // Ensure documents directory exists
 if (!fs.existsSync(DOCUMENTS_PATH)) {
@@ -85,13 +85,13 @@ async function downloadJFKDocuments() {
       return [];
     }
     
-    console.log(`Limiting to ${MAX_DOCUMENTS} documents to avoid overwhelming the system`);
-    const limitedLinks = pdfLinks.slice(0, MAX_DOCUMENTS);
-    console.log(`Found ${limitedLinks.length} PDF documents on the JFK Archive page`);
+    console.log(`Found ${pdfLinks.length} PDF documents on the JFK Archive page`);
     
     // Download each document
     const downloadedFiles = [];
-    for (const link of limitedLinks) {
+    let downloadCount = 0;
+    
+    for (const link of pdfLinks) {
       const fullUrl = link.startsWith('http') ? link : `https://www.archives.gov${link}`;
       const fileName = path.basename(fullUrl);
       const filePath = path.join(DOCUMENTS_PATH, fileName);
@@ -106,13 +106,19 @@ async function downloadJFKDocuments() {
       const success = await downloadFile(fullUrl, filePath);
       if (success) {
         downloadedFiles.push(filePath);
+        downloadCount++;
+        
+        // Log progress every 10 files
+        if (downloadCount % 10 === 0) {
+          console.log(`Progress: Downloaded ${downloadCount} new files so far`);
+        }
       }
       
-      // Add a small delay between downloads
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Add a small delay between downloads to avoid overwhelming the server
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    console.log(`Document downloads completed. Downloaded ${downloadedFiles.length} documents.`);
+    console.log(`Document downloads completed. Downloaded ${downloadCount} new documents (${downloadedFiles.length} total).`);
     return downloadedFiles;
   } catch (error) {
     console.error(`Error downloading JFK Archive documents: ${error.message}`);
@@ -218,7 +224,6 @@ async function createEmbedding(text) {
     });
     
     console.log(`OpenAI API response status: ${response.status}`);
-    console.log(`OpenAI API response headers: ${JSON.stringify(Array.from(response.headers.entries()))}`);
     
     if (!response.ok) {
       const errorData = await response.json();
@@ -233,7 +238,12 @@ async function createEmbedding(text) {
       throw new Error(`Unexpected OpenAI API response format: ${JSON.stringify(data)}`);
     }
     
-    return data.data[0].embedding;
+    // Truncate embedding to 1024 dimensions
+    const fullEmbedding = data.data[0].embedding;
+    console.log(`Embedding has ${fullEmbedding.length} dimensions, truncating to 1024 dimensions`);
+    const truncatedEmbedding = fullEmbedding.slice(0, 1024);
+    
+    return truncatedEmbedding;
   } catch (error) {
     console.error(`Error creating embeddings: ${error.message}`);
     throw error;
@@ -256,72 +266,102 @@ async function processDocuments(indexName) {
   let totalSuccessfulChunks = 0;
   let totalProcessedFiles = 0;
   
-  // Process each file individually
-  for (const filePath of pdfFiles) {
-    const fileName = path.basename(filePath);
-    console.log(`\nProcessing file: ${fileName}`);
+  // Process files in batches to avoid memory issues
+  const BATCH_SIZE = 20;
+  const batches = [];
+  
+  for (let i = 0; i < pdfFiles.length; i += BATCH_SIZE) {
+    batches.push(pdfFiles.slice(i, i + BATCH_SIZE));
+  }
+  
+  console.log(`Split ${pdfFiles.length} files into ${batches.length} batches for processing`);
+  
+  // Process each batch
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    console.log(`\nProcessing batch ${batchIndex + 1}/${batches.length} (${batch.length} files)`);
     
-    try {
-      // Extract text from PDF
-      const extractedText = await extractTextFromPDF(filePath);
+    // Process each file in the batch
+    for (const filePath of batch) {
+      const fileName = path.basename(filePath);
+      console.log(`\nProcessing file: ${fileName}`);
       
-      if (!extractedText || extractedText.trim().length < 10) {
-        console.warn(`Insufficient text extracted from ${fileName}, skipping...`);
-        continue;
-      }
-      
-      // Split text into manageable chunks
-      const chunks = splitIntoChunks(extractedText);
-      console.log(`Split document into ${chunks.length} chunks`);
-      
-      // Process each chunk
-      let processedChunks = 0;
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
+      try {
+        // Extract text from PDF
+        const extractedText = await extractTextFromPDF(filePath);
         
-        // Skip tiny chunks
-        if (chunk.trim().length < 10) continue;
-        
-        try {
-          console.log(`Creating embedding for chunk ${i+1}/${chunks.length} of ${fileName}...`);
-          const embedding = await createEmbedding(chunk);
-          
-          // Create a unique ID
-          const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
-          
-          // Store in Pinecone
-          await pineconeIndex.upsert([
-            {
-              id,
-              values: embedding,
-              metadata: {
-                text: chunk,
-                source: fileName,
-                chunk: i
-              }
-            }
-          ]);
-          
-          processedChunks++;
-          console.log(`Successfully stored embedding ${id} in Pinecone`);
-          
-          // Add a small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 200));
-        } catch (error) {
-          console.error(`Error processing chunk ${i+1} of ${fileName}: ${error.message}`);
-          // Continue with next chunk
+        if (!extractedText || extractedText.trim().length < 10) {
+          console.warn(`Insufficient text extracted from ${fileName}, skipping...`);
+          continue;
         }
+        
+        // Split text into manageable chunks
+        const chunks = splitIntoChunks(extractedText);
+        console.log(`Split document into ${chunks.length} chunks`);
+        
+        // Process each chunk
+        let processedChunks = 0;
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          
+          // Skip tiny chunks
+          if (chunk.trim().length < 10) continue;
+          
+          try {
+            console.log(`Creating embedding for chunk ${i+1}/${chunks.length} of ${fileName}...`);
+            const embedding = await createEmbedding(chunk);
+            
+            // Create a unique ID
+            const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
+            
+            // Store in Pinecone
+            await pineconeIndex.upsert([
+              {
+                id,
+                values: embedding,
+                metadata: {
+                  text: chunk,
+                  source: fileName,
+                  chunk: i
+                }
+              }
+            ]);
+            
+            processedChunks++;
+            
+            // Log less frequently to reduce output noise
+            if (i % 5 === 0 || i === chunks.length - 1) {
+              console.log(`Stored embedding ${i+1}/${chunks.length} for ${fileName}`);
+            }
+            
+            // Add a small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 200));
+          } catch (error) {
+            console.error(`Error processing chunk ${i+1} of ${fileName}: ${error.message}`);
+            // Continue with next chunk
+          }
+        }
+        
+        totalSuccessfulChunks += processedChunks;
+        totalProcessedFiles++;
+        console.log(`Completed processing ${fileName}: ${processedChunks}/${chunks.length} chunks successfully stored`);
+        
+        // Log overall progress
+        console.log(`Overall progress: ${totalProcessedFiles}/${pdfFiles.length} files processed (${Math.round(totalProcessedFiles/pdfFiles.length*100)}%)`);
+      } catch (error) {
+        console.error(`Error processing file ${fileName}: ${error.message}`);
+        // Continue with next file
       }
-      
-      totalSuccessfulChunks += processedChunks;
-      console.log(`Completed processing ${fileName}: ${processedChunks}/${chunks.length} chunks successfully stored`);
-    } catch (error) {
-      console.error(`Error processing file ${fileName}: ${error.message}`);
-      // Continue with next file
+    }
+    
+    // Force garbage collection between batches if possible
+    if (global.gc) {
+      global.gc();
+      console.log('Performed garbage collection between batches');
     }
   }
   
-  console.log(`\nDocument ingestion completed. Successfully processed ${totalSuccessfulChunks} chunks from ${pdfFiles.length} files.`);
+  console.log(`\nDocument ingestion completed. Successfully processed ${totalSuccessfulChunks} chunks from ${totalProcessedFiles} files.`);
   console.log(`These documents are now searchable in your Pinecone index: ${indexName}`);
 }
 
