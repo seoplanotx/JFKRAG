@@ -203,15 +203,10 @@ function splitIntoChunks(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
 }
 
 // Function to create embeddings using OpenRouter
-async function createEmbeddings(text) {
-  if (!text || text.trim().length < 10) {
-    console.warn('Text too short for embedding, skipping');
-    throw new Error('Text is too short for embedding');
-  }
+async function createEmbedding(text) {
+  console.log(`Creating embedding for text of length ${text.length} characters...`);
   
   try {
-    console.log(`Creating embedding for text of length ${text.length} characters...`);
-    
     const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -222,7 +217,7 @@ async function createEmbeddings(text) {
       },
       body: JSON.stringify({
         model: 'openai/text-embedding-ada-002',
-        input: text.slice(0, 8000), // Limit input size
+        input: text,
       }),
     });
     
@@ -290,7 +285,7 @@ async function processDocuments(indexName) {
           
           try {
             console.log(`Creating embedding for chunk ${i+1}/${chunks.length} of ${fileName}...`);
-            const embedding = await createEmbeddings(chunk);
+            const embedding = await createEmbedding(chunk);
             
             // Create a unique ID
             const id = `${fileName.replace(/\.[^/.]+$/, '')}_chunk_${i}`;
