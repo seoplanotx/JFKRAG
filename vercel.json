@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "functions": {
+    "api/query.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "routes": [
+    { "src": "/(.*)", "dest": "/$1" }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+} 
